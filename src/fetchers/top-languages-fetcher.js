@@ -59,7 +59,7 @@ async function fetchTopLanguages(username, exclude_repo = []) {
   repoNodes = repoNodes
     .sort((a, b) => b.size - a.size)
     .filter((name) => {
-      return !repoToHide[name.name];
+      return !repoToHide[name.name] && !name.name.startsWith("_");
     });
 
   repoNodes = repoNodes
