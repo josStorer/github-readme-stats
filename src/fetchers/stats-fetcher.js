@@ -53,6 +53,44 @@ const fetcher = (variables, token) => {
   );
 };
 
+const privateAnonymousCommitsFetcher = (variables, token) => {
+  const sinceDate = new Date(Date.now() - 12 * 30 * 24 * 60 * 60 * 1000).toISOString();
+  return request(
+    {
+      query: `
+      query privateAnonymousInfo($login: String!, $since: GitTimestamp!) {
+        user(login: $login) {
+          name
+          login
+          repositories(first: 100, ownerAffiliations: OWNER, isFork: false) {
+            totalCount
+            nodes {
+              name
+              defaultBranchRef {
+                target {
+                  ... on Commit {
+                    history(first: 0, since: $since) {
+                      totalCount
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+      `,
+      variables: {
+        ...variables,
+        since: sinceDate,
+      },
+    },
+    {
+      Authorization: `bearer ${token}`,
+    },
+  );
+};
+
 // https://github.com/anuraghazra/github-readme-stats/issues/92#issuecomment-661026467
 // https://github.com/anuraghazra/github-readme-stats/pull/211/
 const totalCommitsFetcher = async (username) => {
@@ -116,6 +154,16 @@ async function fetchStats(
     );
   }
 
+  let res2 = await retryer(privateAnonymousCommitsFetcher, { login: username });
+
+  if (res2.data.errors) {
+    logger.error(res2.data.errors);
+    throw new CustomError(
+      res2.data.errors[0].message || "Could not fetch user",
+      CustomError.USER_NOT_FOUND,
+    );
+  }
+
   const user = res.data.data.user;
 
   stats.name = user.name || user.login;
@@ -136,6 +184,12 @@ async function fetchStats(
       user.contributionsCollection.restrictedContributionsCount;
   }
 
+  const privateAnonymousRepos = res2.data.data.user.repositories.nodes.filter(repo => repo.name.startsWith("_"))
+  const privateAnonymousCommits = privateAnonymousRepos.reduce((prev, curr) => {
+    return prev + curr.defaultBranchRef.target.history.totalCount;
+  }, 0)
+  stats.totalCommits += privateAnonymousCommits
+
   stats.totalPRs = user.pullRequests.totalCount;
   stats.contributedTo = user.repositoriesContributedTo.totalCount;
 
@@ -152,6 +206,8 @@ async function fetchStats(
     prs: stats.totalPRs,
     issues: stats.totalIssues,
   });
+
+  // console.log(stats)
 
   return stats;
 }
