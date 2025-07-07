@@ -3,7 +3,7 @@ const githubUsernameRegex = require("github-username-regex");
 
 const retryer = require("../common/retryer");
 const calculateRank = require("../calculateRank");
-const { request, logger, CustomError } = require("../common/utils");
+const { request, logger, CustomError, parseOwnerAffiliations } = require("../common/utils");
 
 require("dotenv").config();
 
@@ -11,7 +11,7 @@ const fetcher = (variables, token) => {
   return request(
     {
       query: `
-      query userInfo($login: String!) {
+      query userInfo($login: String!, $ownerAffiliations: [RepositoryAffiliation]) {
         user(login: $login) {
           name
           login
@@ -34,7 +34,7 @@ const fetcher = (variables, token) => {
           followers {
             totalCount
           }
-          repositories(first: 100, ownerAffiliations: OWNER, orderBy: {direction: DESC, field: STARGAZERS}) {
+          repositories(first: 100, ownerAffiliations: $ownerAffiliations, orderBy: {direction: DESC, field: STARGAZERS}) {
             totalCount
             nodes {
               stargazers {
@@ -89,6 +89,7 @@ const totalCommitsFetcher = async (username) => {
 
 async function fetchStats(
   username,
+  ownerAffiliations,
   count_private = false,
   include_all_commits = false,
 ) {
@@ -103,8 +104,9 @@ async function fetchStats(
     contributedTo: 0,
     rank: { level: "C", score: 0 },
   };
+  ownerAffiliations = parseOwnerAffiliations(ownerAffiliations);
 
-  let res = await retryer(fetcher, { login: username });
+  let res = await retryer(fetcher, { login: username, ownerAffiliations });
 
   if (res.data.errors) {
     logger.error(res.data.errors);
